@@ -1,0 +1,11 @@
+[Unit]
+Description=Prometheus textfile collector for ZFS snapshots
+
+[Timer]
+OnActiveSec=15sec
+OnUnitInactiveSec=15sec
+AccuracySec=5sec
+Persistent=true
+
+[Install]
+WantedBy=multi-user.target

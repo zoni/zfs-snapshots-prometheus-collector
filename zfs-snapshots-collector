@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+
+import os
+import re
+import subprocess
+import sys
+import time
+
+TEXTFILE_DIRECTORY = "/var/tmp/node-exporter"
+
+
+def write_prometheus_metrics(metrics, f):
+    """Write the given set of metrics out in Prometheus text format"""
+    f.write("# HELP zfs_snapshots_total Number of snapshots per filesystem.\n")
+    f.write("# TYPE zfs_snapshots_total gauge\n")
+    for filesystem, snapshot_times in metrics.items():
+        f.write(f'zfs_snapshots_total{{filesystem="{filesystem}"}} {len(snapshot_times)}\n')
+
+    f.write("# HELP zfs_snapshots_oldest_seconds Age of oldest snapshot since unix epoch in seconds.\n")
+    f.write("# TYPE zfs_snapshots_oldest_seconds gauge\n")
+    for filesystem, snapshot_times in metrics.items():
+        f.write(f'zfs_snapshots_oldest_seconds{{filesystem="{filesystem}"}} {min(snapshot_times)}\n')
+
+    f.write("# HELP zfs_snapshots_latest_seconds Age of latest snapshot since unix epoch in seconds.\n")
+    f.write("# TYPE zfs_snapshots_latest_seconds gauge\n")
+    for filesystem, snapshot_times in metrics.items():
+        f.write(f'zfs_snapshots_latest_seconds{{filesystem="{filesystem}"}} {max(snapshot_times)}\n')
+
+
+def write_prometheus_metadata(seconds, f):
+    f.write("# HELP zfs_snapshots_time_spent_getting_snapshots_seconds Time spent waiting for zfs list to return snapshots.\n")
+    f.write("# TYPE zfs_snapshots_time_spent_getting_snapshots_seconds gauge\n")
+    f.write(f"zfs_snapshots_time_spent_getting_snapshots_seconds {seconds}\n")
+
+    f.write("# HELP zfs_snapshots_last_update_timestamp_seconds Time of last update in seconds since unix epoch.\n")
+    f.write("# TYPE zfs_snapshots_last_update_timestamp_seconds gauge\n")
+    f.write(f"zfs_snapshots_last_update_timestamp_seconds {time.time()}\n")
+
+
+def get_zfs_snapshots(root, properties):
+    """
+    Get a list of ZFS snapshots under the given root.
+
+    Returns a structure like:
+
+        [ [value_property_1, value_property_2],
+          [value_property_1, value_property_2] ]
+    """
+    result = subprocess.run(["zfs", "list", "-H", "-t", "snapshot", "-r", "-p", "-o", ",".join(properties), root], stdout=subprocess.PIPE, encoding="utf-8")
+    result.check_returncode()
+    return [line.split("\t") for line in result.stdout.splitlines()]
+
+
+def snapshot_to_filesystem_name(snapshot):
+    return re.findall(r'(.+)@(.+)', snapshot)[0][0]
+
+
+def main():
+    start = time.monotonic()
+    snapshots = get_zfs_snapshots(sys.argv[1], ["name", "creation"])
+    time_spent_getting_snapshots = time.monotonic() - start
+
+    accumulated_snapshots = {}
+    for snapshot in snapshots:
+        name = snapshot_to_filesystem_name(snapshot[0])
+        values = accumulated_snapshots.get(name, []) + [int(snapshot[1])]
+        accumulated_snapshots[name] = values
+
+    with open("/var/tmp/node-exporter/zfs-snapshots.tmp", "w") as f:
+        write_prometheus_metrics(accumulated_snapshots, f)
+        write_prometheus_metadata(time_spent_getting_snapshots, f)
+    os.rename("/var/tmp/node-exporter/zfs-snapshots.tmp", "/var/tmp/node-exporter/zfs-snapshots.prom")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,6 @@
+[Unit]
+Description=Prometheus textfile collector for ZFS snapshots
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/zfs-snapshots-collector storage
