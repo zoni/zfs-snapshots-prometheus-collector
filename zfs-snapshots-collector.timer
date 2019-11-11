@@ -2,8 +2,7 @@
 Description=Prometheus textfile collector for ZFS snapshots
 
 [Timer]
-OnActiveSec=15sec
-OnUnitInactiveSec=15sec
+OnCalendar=*:*:00/15
 AccuracySec=5sec
 Persistent=true
 
